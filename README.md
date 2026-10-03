@@ -1,10 +1,8 @@
-# study_document_manager
+# Study Document Manager
 
-A new Flutter project.
+An app for managing study documents.
 
 ## Getting Started
-
-This project is a starting point for a Flutter application.
 
 A few resources to get you started if this is your first Flutter project:
 
