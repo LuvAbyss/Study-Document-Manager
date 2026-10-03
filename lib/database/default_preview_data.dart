@@ -1,0 +1,178 @@
+import '../struct/models.dart';
+
+/// Dữ liệu mẫu khởi tạo ứng dụng (Sample / Preview Data Generator)
+/// Tương tự file generatePreviewData.dart trong kiến trúc của Cashew.
+class DefaultPreviewData {
+  static final List<Subject> sampleSubjects = [
+    Subject(
+      id: 'sub_se301',
+      code: 'SE301',
+      name: 'Kiến trúc Phần mềm',
+      lecturer: 'TS. Nguyễn Văn A',
+      colorValue: 0xFF1E88E5, // Blue
+      iconName: 'architecture',
+      semester: 'HK1 2026-2027',
+      creditCount: 4,
+      createdAt: DateTime.now().subtract(const Duration(days: 30)),
+    ),
+    Subject(
+      id: 'sub_se346',
+      code: 'SE346',
+      name: 'Phát triển Ứng dụng Di động',
+      lecturer: 'ThS. Trần Thị B',
+      colorValue: 0xFF7E57C2, // Purple
+      iconName: 'phone_android',
+      semester: 'HK1 2026-2027',
+      creditCount: 3,
+      createdAt: DateTime.now().subtract(const Duration(days: 28)),
+    ),
+    Subject(
+      id: 'sub_cs204',
+      code: 'CS204',
+      name: 'Cơ sở Dữ liệu Phân tán',
+      lecturer: 'PGS.TS. Lê Văn C',
+      colorValue: 0xFF00BFA5, // Teal
+      iconName: 'storage',
+      semester: 'HK1 2026-2027',
+      creditCount: 3,
+      createdAt: DateTime.now().subtract(const Duration(days: 25)),
+    ),
+    Subject(
+      id: 'sub_ai402',
+      code: 'AI402',
+      name: 'Trí tuệ Nhân tạo Ứng dụng',
+      lecturer: 'TS. Hoàng Đức D',
+      colorValue: 0xFFFF7043, // Deep Orange
+      iconName: 'psychology',
+      semester: 'HK1 2026-2027',
+      creditCount: 4,
+      createdAt: DateTime.now().subtract(const Duration(days: 20)),
+    ),
+  ];
+
+  static List<StudyDocument> getSampleDocuments() {
+    final now = DateTime.now();
+
+    return [
+      StudyDocument(
+        id: 'doc_01',
+        title: 'Slide Bài giảng Chương 3: Kiến trúc Phân tầng & Cashew Architecture',
+        description: 'Tài liệu chi tiết về phân tách UI, Logic (Struct), Data Layer và cơ chế Reactive Streams.',
+        subjectId: 'sub_se301',
+        type: DocumentType.lecture,
+        status: DocumentStatus.completed,
+        priority: Priority.high,
+        fileUrl: 'https://docs.flutter.dev/architecture-cashew-ch3.pdf',
+        fileType: 'PDF',
+        fileSizeBytes: 4850000, // ~4.6 MB
+        dueDate: null,
+        isFavorite: true,
+        tags: ['architecture', 'cashew', 'slides', 'solid'],
+        createdAt: now.subtract(const Duration(days: 14)),
+        updatedAt: now.subtract(const Duration(days: 5)),
+      ),
+      StudyDocument(
+        id: 'doc_02',
+        title: 'Bài tập lớn: Thiết kế & Triển khai Ứng dụng Quản lý Tài liệu',
+        description: 'Yêu cầu: áp dụng đúng chuẩn kiến trúc Cashew, phân tách module, viết unit test đầy đủ.',
+        subjectId: 'sub_se301',
+        type: DocumentType.assignment,
+        status: DocumentStatus.inProgress,
+        priority: Priority.urgent,
+        fileUrl: 'https://classroom.google.com/c/assignment-cashew-spec.pdf',
+        fileType: 'PDF',
+        fileSizeBytes: 1250000, // ~1.2 MB
+        dueDate: now.add(const Duration(days: 3, hours: 4)),
+        isFavorite: true,
+        tags: ['assignment', 'cashew', 'midterm', 'flutter'],
+        createdAt: now.subtract(const Duration(days: 7)),
+        updatedAt: now.subtract(const Duration(days: 1)),
+      ),
+      StudyDocument(
+        id: 'doc_03',
+        title: 'Slide Bài giảng 05: Flutter State Management & Provider Pattern',
+        description: 'Tổng quan về Provider, ChangeNotifier, ValueListenable và StreamBuilder.',
+        subjectId: 'sub_se346',
+        type: DocumentType.lecture,
+        status: DocumentStatus.inProgress,
+        priority: Priority.medium,
+        fileUrl: 'https://flutter.dev/docs/development/data-and-backend/state-mgmt',
+        fileType: 'URL',
+        fileSizeBytes: 0,
+        dueDate: null,
+        isFavorite: false,
+        tags: ['flutter', 'provider', 'statemanagement'],
+        createdAt: now.subtract(const Duration(days: 10)),
+        updatedAt: now.subtract(const Duration(days: 2)),
+      ),
+      StudyDocument(
+        id: 'doc_04',
+        title: 'Bài tập thực hành tuần 6: Tạo giao diện Responsive với Material 3',
+        description: 'Xây dựng giao diện danh sách thẻ tài liệu tự co giãn và bottom sheet bộ lọc.',
+        subjectId: 'sub_se346',
+        type: DocumentType.assignment,
+        status: DocumentStatus.pending,
+        priority: Priority.high,
+        fileUrl: 'https://github.com/flutter/samples/material3_exercise.zip',
+        fileType: 'ZIP',
+        fileSizeBytes: 15400000, // 15.4 MB
+        dueDate: now.add(const Duration(days: 5, hours: 12)),
+        isFavorite: false,
+        tags: ['homework', 'ui', 'material3'],
+        createdAt: now.subtract(const Duration(days: 4)),
+        updatedAt: now.subtract(const Duration(days: 4)),
+      ),
+      StudyDocument(
+        id: 'doc_05',
+        title: 'Tài liệu tham khảo: Designing Data-Intensive Applications (Mã Martin Kleppmann)',
+        description: 'Chương 5 & 6: Replication, Partitioning và Distributed Consensus.',
+        subjectId: 'sub_cs204',
+        type: DocumentType.reference,
+        status: DocumentStatus.completed,
+        priority: Priority.medium,
+        fileUrl: 'https://oreilly.com/library/view/designing-data-intensive/9781491903063/',
+        fileType: 'PDF',
+        fileSizeBytes: 24500000, // 24.5 MB
+        dueDate: null,
+        isFavorite: true,
+        tags: ['database', 'distributed', 'book', 'reference'],
+        createdAt: now.subtract(const Duration(days: 22)),
+        updatedAt: now.subtract(const Duration(days: 10)),
+      ),
+      StudyDocument(
+        id: 'doc_06',
+        title: 'Đề cương ôn tập & Bộ đề thi thử Giữa kỳ Trí tuệ Nhân tạo',
+        description: 'Bao gồm 50 câu hỏi trắc nghiệm và 3 bài toán A* Search, Minimax Alpha-Beta.',
+        subjectId: 'sub_ai402',
+        type: DocumentType.exam,
+        status: DocumentStatus.pending,
+        priority: Priority.urgent,
+        fileUrl: 'https://ai-course.edu.vn/midterm-review-2026.pdf',
+        fileType: 'PDF',
+        fileSizeBytes: 3100000,
+        dueDate: now.add(const Duration(days: 2)),
+        isFavorite: true,
+        tags: ['exam', 'review', 'ai', 'midterm'],
+        createdAt: now.subtract(const Duration(days: 3)),
+        updatedAt: now.subtract(const Duration(days: 1)),
+      ),
+      StudyDocument(
+        id: 'doc_07',
+        title: 'Bài tập nhóm: Thuật toán Tối ưu hóa bầy đàn (PSO Algorithm)',
+        description: 'Cài đặt thuật toán bằng Python/Dart và so sánh tốc độ hội tụ với Genetic Algorithm.',
+        subjectId: 'sub_ai402',
+        type: DocumentType.assignment,
+        status: DocumentStatus.completed,
+        priority: Priority.low,
+        fileUrl: 'https://colab.research.google.com/drive/pso-optimization-experiment',
+        fileType: 'URL',
+        fileSizeBytes: 0,
+        dueDate: now.subtract(const Duration(days: 2)),
+        isFavorite: false,
+        tags: ['pso', 'ai', 'algorithm', 'python'],
+        createdAt: now.subtract(const Duration(days: 18)),
+        updatedAt: now.subtract(const Duration(days: 2)),
+      ),
+    ];
+  }
+}
