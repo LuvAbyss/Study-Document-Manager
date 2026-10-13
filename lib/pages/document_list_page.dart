@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
-import '../struct/models.dart';
 import '../database/database_global.dart';
+import '../struct/models.dart';
 import '../widgets/document_card.dart';
-import '../widgets/search_bar_widget.dart';
-import '../widgets/filter_bottom_sheet.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/filter_bottom_sheet.dart';
+import '../widgets/search_bar_widget.dart';
 import 'add_edit_document_page.dart';
 import 'document_detail_page.dart';
 
 /// Màn hình Danh sách Tài liệu học tập (Document List Page)
+/// Hỗ trợ lọc theo Phạm vi quyền truy cập (Tất cả / Của tôi / Được chia sẻ) và tìm kiếm đa tiêu chí.
 class DocumentListPage extends StatefulWidget {
   final DocumentFilter initialFilter;
 
@@ -105,7 +106,7 @@ class _DocumentListPageState extends State<DocumentListPage> {
             },
           ),
 
-          // 2. Thanh phân loại nhanh (Quick Filter Chips)
+          // 2. Thanh phân loại nhanh (Quick Filter Chips: Phạm vi Sở hữu / Chia sẻ & Loại tài liệu)
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -113,10 +114,39 @@ class _DocumentListPageState extends State<DocumentListPage> {
               children: [
                 _buildQuickChip(
                   label: 'Tất cả',
-                  isSelected: _filter.type == null && _filter.priority == null,
+                  isSelected: _filter.type == null &&
+                      _filter.priority == null &&
+                      _filter.ownershipFilter == DocumentOwnershipFilter.allAccessible,
                   onSelected: () => setState(() => _filter = _filter.copyWith(
                         clearType: true,
                         clearPriority: true,
+                        ownershipFilter: DocumentOwnershipFilter.allAccessible,
+                      )),
+                ),
+                const SizedBox(width: 8),
+                _buildQuickChip(
+                  label: 'Của tôi',
+                  icon: Icons.person_rounded,
+                  isSelected:
+                      _filter.ownershipFilter == DocumentOwnershipFilter.ownedByMe,
+                  onSelected: () => setState(() => _filter = _filter.copyWith(
+                        ownershipFilter:
+                            _filter.ownershipFilter == DocumentOwnershipFilter.ownedByMe
+                                ? DocumentOwnershipFilter.allAccessible
+                                : DocumentOwnershipFilter.ownedByMe,
+                      )),
+                ),
+                const SizedBox(width: 8),
+                _buildQuickChip(
+                  label: 'Được chia sẻ',
+                  icon: Icons.folder_shared_rounded,
+                  isSelected:
+                      _filter.ownershipFilter == DocumentOwnershipFilter.sharedWithMe,
+                  onSelected: () => setState(() => _filter = _filter.copyWith(
+                        ownershipFilter: _filter.ownershipFilter ==
+                                DocumentOwnershipFilter.sharedWithMe
+                            ? DocumentOwnershipFilter.allAccessible
+                            : DocumentOwnershipFilter.sharedWithMe,
                       )),
                 ),
                 const SizedBox(width: 8),
@@ -139,7 +169,9 @@ class _DocumentListPageState extends State<DocumentListPage> {
                   icon: Icons.warning_amber_rounded,
                   isSelected: _filter.priority == Priority.urgent,
                   onSelected: () => setState(() => _filter = _filter.copyWith(
-                        priority: _filter.priority == Priority.urgent ? null : Priority.urgent,
+                        priority: _filter.priority == Priority.urgent
+                            ? null
+                            : Priority.urgent,
                         clearPriority: _filter.priority == Priority.urgent,
                       )),
                 ),
@@ -148,12 +180,13 @@ class _DocumentListPageState extends State<DocumentListPage> {
           ),
           const SizedBox(height: 6),
 
-          // 3. Danh sách tài liệu phản ứng (Reactive StreamBuilder)
+          // 3. Danh sách tài liệu phản ứng (Reactive StreamBuilder kết hợp RLS)
           Expanded(
             child: StreamBuilder<List<StudyDocument>>(
               stream: database.watchDocumentsWithFilter(_filter),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
@@ -180,7 +213,9 @@ class _DocumentListPageState extends State<DocumentListPage> {
                       } else {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (ctx) => const AddEditDocumentPage()),
+                          MaterialPageRoute(
+                            builder: (ctx) => const AddEditDocumentPage(),
+                          ),
                         );
                       }
                     },
@@ -209,7 +244,8 @@ class _DocumentListPageState extends State<DocumentListPage> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (ctx) => AddEditDocumentPage(initialDocument: doc),
+                            builder: (ctx) =>
+                                AddEditDocumentPage(initialDocument: doc),
                           ),
                         );
                       },

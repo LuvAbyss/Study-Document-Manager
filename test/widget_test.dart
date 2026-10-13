@@ -130,4 +130,44 @@ void main() {
     // Xác nhận kết quả tìm thấy đúng 1 thẻ DocumentCard tương ứng
     expect(find.byType(DocumentCard), findsOneWidget);
   });
+
+  testWidgets('Kiểm thử Tab Cloud & RLS: Chuyển đổi giữa 3+ tài khoản Google và cập nhật quyền truy cập', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AppSettings()),
+        ],
+        child: MaterialApp(
+          theme: AppColors.lightTheme,
+          home: const HomePage(),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    // Chuyển sang Tab "Cloud & RLS"
+    await tester.tap(find.text('Cloud & RLS'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Cloud Auth & Phân quyền RLS'), findsOneWidget);
+    expect(find.text('TS. Nguyễn Văn An'), findsWidgets);
+
+    // Chuyển sang tài khoản thứ 2 (ThS. Trần Thị Bình - uid_user_2)
+    await tester.tap(find.byKey(const Key('switch_account_uid_user_2')));
+    await tester.pumpAndSettle();
+
+    expect(database.currentUserUid, 'uid_user_2');
+    // Tài khoản 2 chỉ được xem 5/7 tài liệu theo RLS
+    expect((await database.getAllDocuments()).length, 5);
+
+    // Chuyển sang tài khoản thứ 3 (Lê Hoàng Cường - uid_user_3)
+    await tester.drag(find.byType(ListView).last, const Offset(0, -250));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('switch_account_uid_user_3')));
+    await tester.pumpAndSettle();
+
+    expect(database.currentUserUid, 'uid_user_3');
+    expect((await database.getAllDocuments()).length, 5);
+  });
 }

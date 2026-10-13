@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../struct/models.dart';
-import '../struct/document_service.dart';
-import '../struct/settings.dart';
-import '../database/database_global.dart';
-import '../widgets/summary_card.dart';
-import '../widgets/document_card.dart';
 import '../colors.dart';
-import 'document_list_page.dart';
-import 'subjects_page.dart';
-import 'search_page.dart';
+import '../database/database_global.dart';
+import '../struct/document_service.dart';
+import '../struct/models.dart';
+import '../struct/settings.dart';
+import '../widgets/document_card.dart';
+import '../widgets/summary_card.dart';
 import 'add_edit_document_page.dart';
+import 'cloud_account_page.dart';
 import 'document_detail_page.dart';
+import 'document_list_page.dart';
+import 'search_page.dart';
+import 'subjects_page.dart';
 
 /// Màn hình chính của ứng dụng (Cashew Navigation Framework & Home Dashboard)
+/// Tích hợp quản lý Tài khoản Google (Firebase Auth) & Phân quyền RLS (Supabase).
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -35,6 +37,7 @@ class _HomePageState extends State<HomePage> {
       const DocumentListPage(),
       const SubjectsPage(),
       const SearchPage(),
+      const CloudAccountPage(),
     ];
 
     return Scaffold(
@@ -68,6 +71,11 @@ class _HomePageState extends State<HomePage> {
             selectedIcon: Icon(Icons.manage_search_rounded),
             label: 'Tìm kiếm',
           ),
+          NavigationDestination(
+            icon: Icon(Icons.cloud_outlined),
+            selectedIcon: Icon(Icons.cloud_done_rounded),
+            label: 'Cloud & RLS',
+          ),
         ],
       ),
     );
@@ -91,12 +99,45 @@ class _HomePageState extends State<HomePage> {
               'Học kỳ 1 • 2026-2027',
               style: TextStyle(
                 fontSize: 12,
-                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                color: isDark
+                    ? AppColors.darkTextSecondary
+                    : AppColors.lightTextSecondary,
               ),
             ),
           ],
         ),
         actions: [
+          // Nút hiển thị tài khoản Google hiện tại & chuyển sang tab Cloud & RLS
+          StreamBuilder<AppUser?>(
+            stream: database.watchCurrentUser(),
+            builder: (context, userSnap) {
+              final user = userSnap.data ?? database.currentUser;
+              if (user == null) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: ActionChip(
+                  avatar: CircleAvatar(
+                    backgroundColor: user.avatarColor,
+                    child: Text(
+                      user.initials,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  label: Text(
+                    user.email.split('@').first,
+                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                  ),
+                  onPressed: () {
+                    setState(() => _currentIndex = 4);
+                  },
+                ),
+              );
+            },
+          ),
           // Nút chuyển đổi Dark/Light mode
           IconButton(
             icon: Icon(
@@ -107,7 +148,9 @@ class _HomePageState extends State<HomePage> {
             tooltip: 'Đổi giao diện sáng/tối',
             onPressed: () {
               settings.setThemeMode(
-                settings.themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark,
+                settings.themeMode == ThemeMode.dark
+                    ? ThemeMode.light
+                    : ThemeMode.dark,
               );
             },
           ),
@@ -178,13 +221,19 @@ class _HomePageState extends State<HomePage> {
               final documents = docSnapshot.data ?? [];
 
               // Tính toán thống kê nghiệp vụ qua Struct Service
-              final stats = DocumentService.computeStatistics(documents, subjects);
+              final stats = DocumentService.computeStatistics(
+                documents,
+                subjects,
+                currentUserUid: database.currentUserUid,
+              );
 
               // Danh sách bài tập sắp đến hạn hoặc khẩn cấp
               final urgentDocs = documents
                   .where((d) =>
                       d.status != DocumentStatus.completed &&
-                      (d.priority == Priority.urgent || d.isOverdue || (d.daysUntilDue != null && d.daysUntilDue! <= 3)))
+                      (d.priority == Priority.urgent ||
+                          d.isOverdue ||
+                          (d.daysUntilDue != null && d.daysUntilDue! <= 3)))
                   .toList();
 
               // Danh sách tài liệu thêm gần đây
@@ -220,16 +269,26 @@ class _HomePageState extends State<HomePage> {
                           children: [
                             const Row(
                               children: [
-                                Icon(Icons.warning_amber_rounded, color: AppColors.priorityUrgent, size: 20),
+                                Icon(
+                                  Icons.warning_amber_rounded,
+                                  color: AppColors.priorityUrgent,
+                                  size: 20,
+                                ),
                                 SizedBox(width: 6),
                                 Text(
                                   'Cần chú ý & Hạn chót sắp tới',
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ],
                             ),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: AppColors.priorityUrgent.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(10),
@@ -254,7 +313,8 @@ class _HomePageState extends State<HomePage> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (ctx) => DocumentDetailPage(documentId: doc.id),
+                                builder: (ctx) =>
+                                    DocumentDetailPage(documentId: doc.id),
                               ),
                             );
                           },
@@ -262,7 +322,8 @@ class _HomePageState extends State<HomePage> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (ctx) => AddEditDocumentPage(initialDocument: doc),
+                                builder: (ctx) =>
+                                    AddEditDocumentPage(initialDocument: doc),
                               ),
                             );
                           },
@@ -307,7 +368,8 @@ class _HomePageState extends State<HomePage> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (ctx) => DocumentDetailPage(documentId: doc.id),
+                                builder: (ctx) =>
+                                    DocumentDetailPage(documentId: doc.id),
                               ),
                             );
                           },
@@ -315,7 +377,8 @@ class _HomePageState extends State<HomePage> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (ctx) => AddEditDocumentPage(initialDocument: doc),
+                                builder: (ctx) =>
+                                    AddEditDocumentPage(initialDocument: doc),
                               ),
                             );
                           },

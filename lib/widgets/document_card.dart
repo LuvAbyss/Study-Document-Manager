@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
-import '../struct/models.dart';
-import '../struct/formatters.dart';
 import '../colors.dart';
-import 'subject_badge.dart';
+import '../database/database_global.dart';
+import '../struct/formatters.dart';
+import '../struct/models.dart';
 import 'priority_indicator.dart';
+import 'share_document_sheet.dart';
 import 'status_chip.dart';
+import 'subject_badge.dart';
 
-/// Thẻ hiển thị tài liệu học tập theo chuẩn thiết kế Cashew
+/// Thẻ hiển thị tài liệu học tập theo chuẩn thiết kế Cashew (Tích hợp nhãn Phân quyền RLS & Chia sẻ Cloud)
 class DocumentCard extends StatelessWidget {
   final StudyDocument document;
   final Subject? subject;
@@ -33,6 +35,7 @@ class DocumentCard extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final type = document.type;
     final typeColor = type.color;
+    final permissionLevel = database.getEffectivePermission(document.id);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -63,7 +66,7 @@ class DocumentCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Hàng 1: Loại tài liệu icon + Tên môn học + Favorite + Action Menu
+                // Hàng 1: Loại tài liệu icon + Tên môn học + Nhãn Quyền RLS + Favorite + Action Menu
                 Row(
                   children: [
                     // Icon loại tài liệu
@@ -83,51 +86,106 @@ class DocumentCard extends StatelessWidget {
                         child: SubjectBadge(subject: subject, compact: true),
                       ),
                     ),
+                    // Nhãn phân quyền RLS (Owner / Editor / Viewer)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: permissionLevel.color.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            permissionLevel.icon,
+                            size: 12,
+                            color: permissionLevel.color,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            permissionLevel.shortLabel,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: permissionLevel.color,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
                     // Favorite button
                     IconButton(
                       icon: Icon(
-                        document.isFavorite ? Icons.star_rounded : Icons.star_outline_rounded,
+                        document.isFavorite
+                            ? Icons.star_rounded
+                            : Icons.star_outline_rounded,
                         color: document.isFavorite ? AppColors.accentAmber : Colors.grey,
                         size: 22,
                       ),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       splashRadius: 18,
-                      onPressed: onToggleFavorite,
+                      onPressed: permissionLevel.canEdit ? onToggleFavorite : null,
                     ),
                     const SizedBox(width: 8),
                     // Action Menu Popup
                     PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert_rounded, size: 20, color: Colors.grey),
+                      icon: const Icon(
+                        Icons.more_vert_rounded,
+                        size: 20,
+                        color: Colors.grey,
+                      ),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       splashRadius: 18,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       onSelected: (val) {
+                        if (val == 'share') {
+                          ShareDocumentSheet.show(context, document);
+                        }
                         if (val == 'edit') onEdit?.call();
                         if (val == 'delete') onDelete?.call();
                       },
                       itemBuilder: (ctx) => [
                         const PopupMenuItem(
-                          value: 'edit',
+                          value: 'share',
                           child: Row(
                             children: [
-                              Icon(Icons.edit_outlined, size: 18),
+                              Icon(Icons.share_rounded, size: 18, color: AppColors.primary),
                               SizedBox(width: 8),
-                              Text('Chỉnh sửa'),
+                              Text('Chia sẻ & Phân quyền'),
                             ],
                           ),
                         ),
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Row(
-                            children: [
-                              Icon(Icons.delete_outline_rounded, size: 18, color: Colors.red),
-                              SizedBox(width: 8),
-                              Text('Xóa tài liệu', style: TextStyle(color: Colors.red)),
-                            ],
+                        if (permissionLevel.canEdit)
+                          const PopupMenuItem(
+                            value: 'edit',
+                            child: Row(
+                              children: [
+                                Icon(Icons.edit_outlined, size: 18),
+                                SizedBox(width: 8),
+                                Text('Chỉnh sửa'),
+                              ],
+                            ),
                           ),
-                        ),
+                        if (permissionLevel.canDelete)
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.delete_outline_rounded,
+                                  size: 18,
+                                  color: Colors.red,
+                                ),
+                                SizedBox(width: 8),
+                                Text('Xóa tài liệu', style: TextStyle(color: Colors.red)),
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                   ],
@@ -145,7 +203,9 @@ class DocumentCard extends StatelessWidget {
                         : null,
                     color: document.status == DocumentStatus.completed
                         ? Colors.grey
-                        : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
+                        : (isDark
+                            ? AppColors.darkTextPrimary
+                            : AppColors.lightTextPrimary),
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -158,16 +218,52 @@ class DocumentCard extends StatelessWidget {
                     document.description,
                     style: TextStyle(
                       fontSize: 12.5,
-                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                      color: isDark
+                          ? AppColors.darkTextSecondary
+                          : AppColors.lightTextSecondary,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
 
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
 
-                // Hàng 3: Hạn nộp & Thông tin kích thước / đường dẫn
+                // Hàng thông tin Chủ sở hữu & Firebase Storage
+                Row(
+                  children: [
+                    const Icon(Icons.person_outline_rounded, size: 13, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        '${document.ownerName} (${document.ownerEmail})',
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (document.isStoredOnFirebase) ...[
+                      const Icon(
+                        Icons.cloud_done_outlined,
+                        size: 13,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        DocumentFormatters.formatFileSize(document.fileSizeBytes),
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+
+                const SizedBox(height: 8),
+
+                // Hàng 3: Hạn nộp
                 if (document.dueDate != null) ...[
                   Row(
                     children: [
@@ -176,15 +272,21 @@ class DocumentCard extends StatelessWidget {
                             ? Icons.error_outline_rounded
                             : Icons.access_time_rounded,
                         size: 14,
-                        color: document.isOverdue ? AppColors.priorityUrgent : Colors.grey,
+                        color: document.isOverdue
+                            ? AppColors.priorityUrgent
+                            : Colors.grey,
                       ),
                       const SizedBox(width: 4),
                       Text(
                         'Hạn: ${DocumentFormatters.formatDueDate(document.dueDate)}',
                         style: TextStyle(
                           fontSize: 11.5,
-                          fontWeight: document.isOverdue ? FontWeight.bold : FontWeight.w500,
-                          color: document.isOverdue ? AppColors.priorityUrgent : Colors.grey[700],
+                          fontWeight: document.isOverdue
+                              ? FontWeight.bold
+                              : FontWeight.w500,
+                          color: document.isOverdue
+                              ? AppColors.priorityUrgent
+                              : Colors.grey[700],
                         ),
                       ),
                     ],
@@ -197,14 +299,18 @@ class DocumentCard extends StatelessWidget {
                   children: [
                     StatusChip(
                       status: document.status,
-                      onStatusChanged: onStatusChanged,
+                      onStatusChanged:
+                          permissionLevel.canEdit ? onStatusChanged : null,
                     ),
                     const SizedBox(width: 8),
                     PriorityIndicator(priority: document.priority),
                     const Spacer(),
                     if (document.fileType.isNotEmpty)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.grey.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(6),

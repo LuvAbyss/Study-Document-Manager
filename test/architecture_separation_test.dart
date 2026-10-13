@@ -5,7 +5,7 @@ import 'package:study_document_manager/struct/document_service.dart';
 
 /// Lớp Mock Database triển khai giao diện IAppDatabase
 /// Chứng minh khả năng thay thế linh hoạt (Dependency Inversion & Testability)
-class MockTestDatabase implements IAppDatabase {
+class MockTestDatabase extends IAppDatabase {
   final List<StudyDocument> mockDocs = [];
   final List<Subject> mockSubjects = [];
 

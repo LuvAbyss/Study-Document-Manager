@@ -1,11 +1,16 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
-import '../struct/models.dart';
-import '../struct/document_service.dart';
-import '../database/database_global.dart';
+import '../cloud/storage_service.dart';
 import '../colors.dart';
+import '../database/database_global.dart';
+import '../struct/document_service.dart';
+import '../struct/formatters.dart';
+import '../struct/models.dart';
 
 /// Màn hình Thêm mới hoặc Chỉnh sửa Tài liệu học tập (Add / Edit Document Page)
+/// Tích hợp tải tệp vật lý lên Firebase Storage và đồng bộ bảng `documents` trên Supabase.
 class AddEditDocumentPage extends StatefulWidget {
   final StudyDocument? initialDocument;
   final String? preselectedSubjectId;
@@ -36,6 +41,11 @@ class _AddEditDocumentPageState extends State<AddEditDocumentPage> {
   String _fileType = 'PDF';
   bool _isFavorite = false;
 
+  late String _docId;
+  String _storagePath = '';
+  String _fileName = '';
+  int _fileSizeBytes = 0;
+
   List<Subject> _subjects = [];
   bool _isLoading = true;
   String? _errorMessage;
@@ -46,6 +56,7 @@ class _AddEditDocumentPageState extends State<AddEditDocumentPage> {
   void initState() {
     super.initState();
     final doc = widget.initialDocument;
+    _docId = doc?.id ?? const Uuid().v4();
 
     _titleController = TextEditingController(text: doc?.title ?? '');
     _descriptionController = TextEditingController(text: doc?.description ?? '');
@@ -59,6 +70,9 @@ class _AddEditDocumentPageState extends State<AddEditDocumentPage> {
     _dueDate = doc?.dueDate;
     _fileType = doc?.fileType ?? 'PDF';
     _isFavorite = doc?.isFavorite ?? false;
+    _storagePath = doc?.storagePath ?? '';
+    _fileName = doc?.fileName ?? '';
+    _fileSizeBytes = doc?.fileSizeBytes ?? 0;
 
     _loadSubjects();
   }
@@ -85,6 +99,53 @@ class _AddEditDocumentPageState extends State<AddEditDocumentPage> {
     super.dispose();
   }
 
+  Future<void> _uploadPhysicalFileToFirebaseStorage() async {
+    final subjectId = _selectedSubjectId ?? 'sub_general';
+    final currentUser = database.currentUser;
+    final ownerUid =
+        widget.initialDocument?.ownerUid ?? (currentUser?.uid ?? 'uid_user_1');
+    final ext = _fileType.toLowerCase();
+    final rawTitle = _titleController.text.trim().isNotEmpty
+        ? _titleController.text.trim()
+        : 'tai_lieu_hoc_tap';
+    final generatedFileName =
+        '${rawTitle.toLowerCase().replaceAll(RegExp(r'[^\w]+'), '_')}.$ext';
+
+    // Tạo nội dung tệp vật lý chuẩn để tải lên Firebase Storage
+    final sampleBytes = Uint8List.fromList(
+      utf8.encode(
+        'CASHEW_FIREBASE_STORAGE_FILE|docId=$_docId|title=$rawTitle|owner=$ownerUid|timestamp=${DateTime.now().toIso8601String()}',
+      ),
+    );
+
+    final uploadResult = await FirebaseStorageService.instance.uploadDocumentFile(
+      ownerUid: ownerUid,
+      subjectId: subjectId,
+      documentId: _docId,
+      fileName: generatedFileName,
+      bytes: sampleBytes,
+      fileType: _fileType,
+      uploadedByUid: currentUser?.uid ?? ownerUid,
+    );
+
+    if (mounted) {
+      setState(() {
+        _storagePath = uploadResult.storagePath;
+        _fileName = uploadResult.fileName;
+        _fileSizeBytes = uploadResult.fileSizeBytes;
+        _fileUrlController.text = uploadResult.downloadUrl;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Đã tải tệp lên Firebase Storage: ${uploadResult.storagePath}',
+          ),
+          backgroundColor: AppColors.primary,
+        ),
+      );
+    }
+  }
+
   Future<void> _saveDocument() async {
     setState(() => _errorMessage = null);
 
@@ -95,19 +156,30 @@ class _AddEditDocumentPageState extends State<AddEditDocumentPage> {
         .toList();
 
     final now = DateTime.now();
-    final docId = widget.initialDocument?.id ?? const Uuid().v4();
+    final activeUser = database.currentUser;
+    final ownerUid =
+        widget.initialDocument?.ownerUid ?? (activeUser?.uid ?? 'uid_user_1');
+    final ownerName = widget.initialDocument?.ownerName ??
+        (activeUser?.displayName ?? 'TS. Nguyễn Văn An');
+    final ownerEmail = widget.initialDocument?.ownerEmail ??
+        (activeUser?.email ?? 'an.nguyen@edu.vn');
 
     final newDoc = StudyDocument(
-      id: docId,
+      id: _docId,
       title: _titleController.text.trim(),
       description: _descriptionController.text.trim(),
       subjectId: _selectedSubjectId ?? '',
+      ownerUid: ownerUid,
+      ownerName: ownerName,
+      ownerEmail: ownerEmail,
       type: _selectedType,
       status: _selectedStatus,
       priority: _selectedPriority,
       fileUrl: _fileUrlController.text.trim(),
+      storagePath: _storagePath,
+      fileName: _fileName,
       fileType: _fileType,
-      fileSizeBytes: widget.initialDocument?.fileSizeBytes ?? 0,
+      fileSizeBytes: _fileSizeBytes,
       dueDate: _dueDate,
       isFavorite: _isFavorite,
       tags: rawTags,
@@ -135,7 +207,9 @@ class _AddEditDocumentPageState extends State<AddEditDocumentPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              isEditing ? 'Đã cập nhật tài liệu thành công' : 'Đã thêm tài liệu mới',
+              isEditing
+                  ? 'Đã cập nhật tài liệu thành công trên Supabase'
+                  : 'Đã thêm tài liệu mới',
             ),
             backgroundColor: AppColors.primary,
           ),
@@ -281,7 +355,7 @@ class _AddEditDocumentPageState extends State<AddEditDocumentPage> {
               ),
               const SizedBox(height: 20),
 
-              // 3. LOẠI TÀI LIỆU (Lecture, Assignment, Reference, Exam)
+              // 3. LOẠI TÀI LIỆU
               _buildSectionHeader('Loại tài liệu'),
               Wrap(
                 spacing: 8,
@@ -363,7 +437,8 @@ class _AddEditDocumentPageState extends State<AddEditDocumentPage> {
                             : 'Không có hạn',
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight: _dueDate != null ? FontWeight.bold : FontWeight.normal,
+                          fontWeight:
+                              _dueDate != null ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
                     ),
@@ -376,7 +451,8 @@ class _AddEditDocumentPageState extends State<AddEditDocumentPage> {
                       onPressed: () async {
                         final picked = await showDatePicker(
                           context: context,
-                          initialDate: _dueDate ?? DateTime.now().add(const Duration(days: 3)),
+                          initialDate:
+                              _dueDate ?? DateTime.now().add(const Duration(days: 3)),
                           firstDate: DateTime.now().subtract(const Duration(days: 30)),
                           lastDate: DateTime.now().add(const Duration(days: 365)),
                         );
@@ -388,14 +464,16 @@ class _AddEditDocumentPageState extends State<AddEditDocumentPage> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
                       ),
                       child: const Text('Chọn ngày'),
                     ),
                   ],
                 ),
               ),
-              // Phím tắt chọn nhanh ngày
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Row(
@@ -410,15 +488,15 @@ class _AddEditDocumentPageState extends State<AddEditDocumentPage> {
               ),
               const SizedBox(height: 20),
 
-              // 7. LIÊN KẾT / ĐƯỜNG DẪN TÀI LIỆU
-              _buildSectionHeader('Đường dẫn tệp tin hoặc URL'),
+              // 7. LƯU TRỮ TỆP VẬT LÝ TRÊN FIREBASE STORAGE & LIÊN KẾT SUPABASE
+              _buildSectionHeader('Lưu trữ tệp tin vật lý (Firebase Storage) & URL'),
               Row(
                 children: [
                   Expanded(
                     child: TextField(
                       controller: _fileUrlController,
                       decoration: InputDecoration(
-                        hintText: 'https://drive.google.com/... hoặc đường dẫn file',
+                        hintText: 'https://firebasestorage.googleapis.com/... hoặc URL',
                         filled: true,
                         fillColor: isDark ? AppColors.darkCard : AppColors.lightCard,
                         border: OutlineInputBorder(
@@ -446,6 +524,31 @@ class _AddEditDocumentPageState extends State<AddEditDocumentPage> {
                       if (val != null) setState(() => _fileType = val);
                     },
                   ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    key: const Key('upload_firebase_storage_button'),
+                    onPressed: _uploadPhysicalFileToFirebaseStorage,
+                    icon: const Icon(Icons.cloud_upload_rounded, size: 18),
+                    label: const Text('Tải tệp lên Firebase Storage'),
+                  ),
+                  const SizedBox(width: 10),
+                  if (_storagePath.isNotEmpty)
+                    Expanded(
+                      child: Text(
+                        'Đã lưu: $_fileName (${DocumentFormatters.formatFileSize(_fileSizeBytes)})',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 20),

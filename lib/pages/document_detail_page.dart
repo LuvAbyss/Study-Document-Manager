@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../struct/models.dart';
-import '../struct/formatters.dart';
-import '../database/database_global.dart';
-import '../widgets/priority_indicator.dart';
-import '../widgets/status_chip.dart';
+import '../cloud/rls_policy_engine.dart';
 import '../colors.dart';
+import '../database/database_global.dart';
+import '../struct/formatters.dart';
+import '../struct/models.dart';
+import '../widgets/priority_indicator.dart';
+import '../widgets/share_document_sheet.dart';
+import '../widgets/status_chip.dart';
 import 'add_edit_document_page.dart';
 
 /// Màn hình Chi tiết Tài liệu học tập (Document Detail Page)
+/// Tích hợp hiển thị Phân quyền RLS (Supabase) và Đường dẫn Lưu trữ (Firebase Storage).
 class DocumentDetailPage extends StatelessWidget {
   final String documentId;
 
@@ -27,9 +30,19 @@ class DocumentDetailPage extends StatelessWidget {
         if (doc == null) {
           return Scaffold(
             appBar: AppBar(),
-            body: const Center(child: Text('Tài liệu không tồn tại hoặc đã bị xóa')),
+            body: const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Tài liệu không tồn tại, đã bị xóa hoặc bạn không có quyền truy cập (Chặn bởi Supabase RLS).',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
           );
         }
+
+        final permission = database.getEffectivePermission(doc.id);
 
         return FutureBuilder<Subject?>(
           future: database.getSubjectById(doc.subjectId),
@@ -41,15 +54,41 @@ class DocumentDetailPage extends StatelessWidget {
                 title: const Text('Chi tiết tài liệu'),
                 actions: [
                   IconButton(
+                    icon: const Icon(Icons.share_rounded),
+                    tooltip: 'Chia sẻ & Phân quyền',
+                    onPressed: () => ShareDocumentSheet.show(context, doc),
+                  ),
+                  IconButton(
                     icon: Icon(
                       doc.isFavorite ? Icons.star_rounded : Icons.star_outline_rounded,
                       color: doc.isFavorite ? AppColors.accentAmber : null,
                     ),
-                    onPressed: () => database.toggleFavorite(doc.id),
+                    onPressed: () async {
+                      try {
+                        await database.toggleFavorite(doc.id);
+                      } on RlsAccessDeniedException catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+                          );
+                        }
+                      }
+                    },
                   ),
                   IconButton(
                     icon: const Icon(Icons.edit_outlined),
                     onPressed: () {
+                      if (!permission.canEdit) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Từ chối truy cập (RLS): Quyền "${permission.shortLabel}" không được phép chỉnh sửa tài liệu.',
+                            ),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -60,7 +99,20 @@ class DocumentDetailPage extends StatelessWidget {
                   ),
                   IconButton(
                     icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
-                    onPressed: () => _confirmDelete(context, doc),
+                    onPressed: () {
+                      if (!permission.canDelete) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Từ chối truy cập (RLS): Chỉ Chủ sở hữu mới được xóa tài liệu. Quyền hiện tại: ${permission.shortLabel}.',
+                            ),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
+                      _confirmDelete(context, doc);
+                    },
                   ),
                 ],
               ),
@@ -69,7 +121,7 @@ class DocumentDetailPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Hàng tiêu đề loại + Mức độ ưu tiên
+                    // Hàng tiêu đề loại + Mức độ ưu tiên + Status
                     Row(
                       children: [
                         Container(
@@ -98,9 +150,11 @@ class DocumentDetailPage extends StatelessWidget {
                         const Spacer(),
                         StatusChip(
                           status: doc.status,
-                          onStatusChanged: (newStatus) {
-                            database.updateDocumentStatus(doc.id, newStatus);
-                          },
+                          onStatusChanged: permission.canEdit
+                              ? (newStatus) {
+                                  database.updateDocumentStatus(doc.id, newStatus);
+                                }
+                              : null,
                         ),
                       ],
                     ),
@@ -115,6 +169,10 @@ class DocumentDetailPage extends StatelessWidget {
                         height: 1.3,
                       ),
                     ),
+                    const SizedBox(height: 16),
+
+                    // Thẻ Quyền truy cập & Chia sẻ Cloud (Supabase RLS)
+                    _buildCloudPermissionCard(context, doc, permission, isDark),
                     const SizedBox(height: 16),
 
                     // Thông tin Môn học (Card)
@@ -252,10 +310,10 @@ class DocumentDetailPage extends StatelessWidget {
                       const SizedBox(height: 16),
                     ],
 
-                    // Liên kết tệp tin
-                    if (doc.fileUrl.isNotEmpty) ...[
+                    // Thẻ Lưu trữ Vật lý trên Firebase Storage & Liên kết tệp tin
+                    if (doc.fileUrl.isNotEmpty || doc.storagePath.isNotEmpty) ...[
                       const Text(
-                        'Tệp tin / Liên kết đính kèm',
+                        'Lưu trữ Vật lý (Firebase Storage) & Liên kết Tệp',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
@@ -264,7 +322,7 @@ class DocumentDetailPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       Container(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
                           color: isDark ? AppColors.darkCard : AppColors.lightCard,
                           borderRadius: BorderRadius.circular(14),
@@ -272,30 +330,86 @@ class DocumentDetailPage extends StatelessWidget {
                             color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
                           ),
                         ),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Icon(Icons.link_rounded, color: AppColors.primary),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                doc.fileUrl,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.primary,
-                                  decoration: TextDecoration.underline,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                            if (doc.storagePath.isNotEmpty) ...[
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.cloud_done_rounded,
+                                    size: 18,
+                                    color: AppColors.primary,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      doc.fileName.isNotEmpty
+                                          ? '${doc.fileName} (${DocumentFormatters.formatFileSize(doc.fileSizeBytes)})'
+                                          : DocumentFormatters.formatFileSize(doc.fileSizeBytes),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13.5,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      doc.fileType,
+                                      style: const TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.copy_rounded, size: 18),
-                              onPressed: () {
-                                Clipboard.setData(ClipboardData(text: doc.fileUrl));
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Đã sao chép liên kết')),
-                                );
-                              },
+                              const SizedBox(height: 6),
+                              Text(
+                                'Storage Path: ${doc.storagePath}',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontFamily: 'monospace',
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              const Divider(height: 16),
+                            ],
+                            Row(
+                              children: [
+                                const Icon(Icons.link_rounded, color: AppColors.primary),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    doc.fileUrl,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: AppColors.primary,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.copy_rounded, size: 18),
+                                  onPressed: () {
+                                    Clipboard.setData(ClipboardData(text: doc.fileUrl));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Đã sao chép liên kết')),
+                                    );
+                                  },
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -334,26 +448,30 @@ class DocumentDetailPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 30),
 
-                    // Nút chuyển trạng thái hoàn thành nhanh
+                    // Nút chuyển trạng thái hoàn thành nhanh (Chỉ khả dụng nếu có quyền Edit/Owner)
                     SizedBox(
                       width: double.infinity,
                       height: 48,
                       child: ElevatedButton.icon(
-                        onPressed: () {
-                          final newStatus = doc.status == DocumentStatus.completed
-                              ? DocumentStatus.inProgress
-                              : DocumentStatus.completed;
-                          database.updateDocumentStatus(doc.id, newStatus);
-                        },
+                        onPressed: permission.canEdit
+                            ? () {
+                                final newStatus = doc.status == DocumentStatus.completed
+                                    ? DocumentStatus.inProgress
+                                    : DocumentStatus.completed;
+                                database.updateDocumentStatus(doc.id, newStatus);
+                              }
+                            : null,
                         icon: Icon(
                           doc.status == DocumentStatus.completed
                               ? Icons.replay_rounded
                               : Icons.check_circle_outline_rounded,
                         ),
                         label: Text(
-                          doc.status == DocumentStatus.completed
-                              ? 'ĐÁNH DẤU CHƯA XONG'
-                              : 'ĐÁNH DẤU ĐÃ HOÀN THÀNH',
+                          !permission.canEdit
+                              ? 'CHẾ ĐỘ CHỈ XEM (VIEWER - RLS)'
+                              : (doc.status == DocumentStatus.completed
+                                  ? 'ĐÁNH DẤU CHƯA XONG'
+                                  : 'ĐÁNH DẤU ĐÃ HOÀN THÀNH'),
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         style: ElevatedButton.styleFrom(
@@ -377,6 +495,91 @@ class DocumentDetailPage extends StatelessWidget {
     );
   }
 
+  Widget _buildCloudPermissionCard(
+    BuildContext context,
+    StudyDocument doc,
+    PermissionLevel permission,
+    bool isDark,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkCard : AppColors.lightCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: permission.color.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(permission.icon, color: permission.color, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Quyền của bạn: ${permission.displayName}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13.5,
+                    color: permission.color,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => ShareDocumentSheet.show(context, doc),
+                icon: const Icon(Icons.group_add_rounded, size: 16),
+                label: const Text('Chia sẻ', style: TextStyle(fontSize: 12.5)),
+              ),
+            ],
+          ),
+          Text(
+            'Chủ sở hữu gốc: ${doc.ownerName} (${doc.ownerEmail})',
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          StreamBuilder<List<DocumentPermission>>(
+            stream: database.watchPermissionsForDocument(doc.id),
+            builder: (context, permSnap) {
+              final perms = permSnap.data ?? [];
+              if (perms.isEmpty) {
+                return const Text(
+                  'Trạng thái chia sẻ: Riêng tư (chỉ Chủ sở hữu truy cập)',
+                  style: TextStyle(fontSize: 11.5, color: Colors.grey),
+                );
+              }
+              return Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: perms.map((p) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: p.permissionLevel.color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${p.sharedWithEmail} (${p.permissionLevel.shortLabel})',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: p.permissionLevel.color,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   void _confirmDelete(BuildContext context, StudyDocument doc) {
     showDialog(
       context: context,
@@ -395,7 +598,7 @@ class DocumentDetailPage extends StatelessWidget {
               if (context.mounted) {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Đã xóa tài liệu')),
+                  const SnackBar(content: Text('Đã xóa tài liệu và tệp trên Cloud Storage')),
                 );
               }
             },

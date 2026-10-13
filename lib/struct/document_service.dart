@@ -40,8 +40,10 @@ class DocumentService {
     if (doc.fileUrl.isNotEmpty) {
       final uri = Uri.tryParse(doc.fileUrl);
       if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https') && !uri.hasScheme)) {
-        // Cho phép đường dẫn file cục bộ hoặc URL chuẩn
-        if (!doc.fileUrl.startsWith('/') && !doc.fileUrl.contains(':\\') && !doc.fileUrl.contains('://')) {
+        // Cho phép đường dẫn file cục bộ hoặc URL chuẩn hoặc gs:// Firebase Storage
+        if (!doc.fileUrl.startsWith('/') &&
+            !doc.fileUrl.contains(':\\') &&
+            !doc.fileUrl.contains('://')) {
           errors['fileUrl'] = 'Đường dẫn liên kết hoặc file không hợp lệ';
         }
       }
@@ -84,13 +86,44 @@ class DocumentService {
         : ValidationResult.failure(errors);
   }
 
+  /// Xác thực địa chỉ Email khi chia sẻ tài liệu
+  static ValidationResult validateShareRequest({
+    required String targetEmail,
+    required String currentUserEmail,
+  }) {
+    final errors = <String, String>{};
+    final email = targetEmail.trim().toLowerCase();
+
+    if (email.isEmpty) {
+      errors['email'] = 'Vui lòng nhập địa chỉ email người nhận';
+    } else if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      errors['email'] = 'Địa chỉ email không đúng định dạng';
+    } else if (email == currentUserEmail.trim().toLowerCase()) {
+      errors['email'] = 'Không thể tự chia sẻ tài liệu cho chính mình';
+    }
+
+    return errors.isEmpty
+        ? ValidationResult.success()
+        : ValidationResult.failure(errors);
+  }
+
   /// Thuật toán Lọc và Sắp xếp tài liệu thuần (Pure Function for Filtering & Sorting)
   static List<StudyDocument> filterAndSort({
     required List<StudyDocument> documents,
     required DocumentFilter filter,
     Map<String, Subject>? subjectMap,
+    String? currentUserUid,
   }) {
     var result = List<StudyDocument>.from(documents);
+
+    // 0. Lọc theo phạm vi sở hữu / chia sẻ (Ownership Scope)
+    if (currentUserUid != null && currentUserUid.isNotEmpty) {
+      if (filter.ownershipFilter == DocumentOwnershipFilter.ownedByMe) {
+        result = result.where((d) => d.ownerUid == currentUserUid).toList();
+      } else if (filter.ownershipFilter == DocumentOwnershipFilter.sharedWithMe) {
+        result = result.where((d) => d.ownerUid != currentUserUid).toList();
+      }
+    }
 
     // 1. Lọc theo từ khóa tìm kiếm (Search Query)
     if (filter.searchQuery != null && filter.searchQuery!.trim().isNotEmpty) {
@@ -99,6 +132,10 @@ class DocumentService {
         final titleMatch = doc.title.toLowerCase().contains(query);
         final descMatch = doc.description.toLowerCase().contains(query);
         final tagMatch = doc.tags.any((tag) => tag.toLowerCase().contains(query));
+        final ownerMatch = doc.ownerName.toLowerCase().contains(query) ||
+            doc.ownerEmail.toLowerCase().contains(query);
+        final fileMatch = doc.fileName.toLowerCase().contains(query) ||
+            doc.storagePath.toLowerCase().contains(query);
 
         // Tìm theo tên môn học nếu có map
         var subjectMatch = false;
@@ -108,7 +145,7 @@ class DocumentService {
               sub.code.toLowerCase().contains(query);
         }
 
-        return titleMatch || descMatch || tagMatch || subjectMatch;
+        return titleMatch || descMatch || tagMatch || subjectMatch || ownerMatch || fileMatch;
       }).toList();
     }
 
@@ -172,8 +209,9 @@ class DocumentService {
   /// Tính toán tổng hợp số liệu thống kê học tập (KPI & Statistics)
   static StudyStatistics computeStatistics(
     List<StudyDocument> documents,
-    List<Subject> subjects,
-  ) {
+    List<Subject> subjects, {
+    String? currentUserUid,
+  }) {
     final byType = <DocumentType, int>{
       for (var type in DocumentType.values) type: 0,
     };
@@ -185,6 +223,8 @@ class DocumentService {
     var overdueAssignments = 0;
     var completed = 0;
     var urgent = 0;
+    var owned = 0;
+    var sharedWithMe = 0;
 
     for (var doc in documents) {
       byType[doc.type] = (byType[doc.type] ?? 0) + 1;
@@ -209,6 +249,14 @@ class DocumentService {
       if (doc.priority == Priority.urgent && doc.status != DocumentStatus.completed) {
         urgent++;
       }
+
+      if (currentUserUid != null) {
+        if (doc.ownerUid == currentUserUid) {
+          owned++;
+        } else {
+          sharedWithMe++;
+        }
+      }
     }
 
     return StudyStatistics(
@@ -219,6 +267,8 @@ class DocumentService {
       overdueAssignments: overdueAssignments,
       completedDocuments: completed,
       urgentCount: urgent,
+      ownedCount: owned,
+      sharedWithMeCount: sharedWithMe,
     );
   }
 
