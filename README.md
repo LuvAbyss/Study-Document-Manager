@@ -21,6 +21,37 @@ Study Document Manager hỗ trợ quản lý các loại tài liệu:
 - Theo dõi trạng thái bài tập: chưa làm, đang làm và đã hoàn thành
 - Dashboard thống kê số lượng tài liệu, nhiệm vụ cần làm và cảnh báo quá hạn
 - Lưu trữ dữ liệu cục bộ, phù hợp sử dụng offline
+- Đăng nhập và chuyển đổi tài khoản Google qua Firebase Authentication
+- Đồng bộ hồ sơ người dùng, môn học, tài liệu và quyền chia sẻ với Supabase
+- Tải lên, tải xuống và quản lý tệp đính kèm trên Firebase Storage
+- Chia sẻ tài liệu theo email với hai vai trò `viewer` và `editor`
+- Lọc tài liệu theo phạm vi: tất cả, tài liệu của tôi hoặc được chia sẻ với tôi
+- Tìm kiếm theo tiêu đề, mô tả, môn học, tags, chủ sở hữu và đường dẫn tệp
+- Áp dụng Row Level Security (RLS) để cô lập dữ liệu giữa các tài khoản
+- Kiểm soát quyền chi tiết: chủ sở hữu có toàn quyền, editor được cập nhật,
+  viewer chỉ được xem và tải tệp
+
+### Kiến trúc Cloud
+
+Ứng dụng hỗ trợ mô hình local-first và có thể kết nối các dịch vụ cloud:
+
+- **Firebase Authentication:** xác thực Google và quản lý phiên đăng nhập
+- **Firebase Storage:** lưu tệp theo cấu trúc
+  `users/{ownerUid}/subjects/{subjectId}/documents/{documentId}/{fileName}`
+- **Supabase PostgreSQL:** đồng bộ users, subjects, documents và permissions
+- **Supabase RLS:** thực thi quyền truy cập ở tầng dữ liệu, bên cạnh kiểm tra
+  quyền trong ứng dụng
+
+Khi chạy local hoặc test, ứng dụng sử dụng dữ liệu mẫu và cloud sandbox. Có thể
+truyền thông tin kết nối thật bằng `--dart-define`:
+
+```bash
+flutter run \
+  --dart-define=SUPABASE_URL=https://your-project.supabase.co \
+  --dart-define=SUPABASE_ANON_KEY=your-anon-key \
+  --dart-define=FIREBASE_API_KEY=your-firebase-api-key \
+  --dart-define=FIREBASE_STORAGE_BUCKET=gs://your-project.firebasestorage.app
+```
 
 ## Công nghệ sử dụng
 
@@ -30,6 +61,9 @@ Study Document Manager hỗ trợ quản lý các loại tài liệu:
 - Material Design
 - UUID
 - Intl
+- Firebase Authentication
+- Firebase Storage
+- [Supabase](https://supabase.com/) và PostgreSQL RLS
 
 ## Yêu cầu hệ thống
 
@@ -127,12 +161,34 @@ flutter analyze
 
 ```text
 lib/
+├── cloud/       # Firebase Auth/Storage, Supabase sync và policy engine
 ├── database/   # Cơ sở dữ liệu và dữ liệu mẫu
-├── pages/      # Các màn hình ứng dụng
-├── struct/     # Model và service xử lý nghiệp vụ
-├── widgets/    # Widget dùng chung
-└── main.dart   # Điểm khởi chạy ứng dụng
+├── pages/       # Các màn hình ứng dụng
+├── struct/      # Model và service xử lý nghiệp vụ
+├── widgets/     # Widget dùng chung
+└── main.dart    # Điểm khởi chạy ứng dụng
+
+supabase/
+└── migrations/  # Schema PostgreSQL và chính sách RLS
+
+firebase/
+└── storage.rules # Quy tắc truy cập Firebase Storage
 ```
+
+## Kiểm thử cloud và phân quyền
+
+Test suite bao gồm các luồng local database, giao diện và cloud/RLS:
+
+- Xác thực và chuyển đổi giữa nhiều tài khoản
+- Đồng bộ hồ sơ người dùng và tài liệu
+- Kiểm tra đường dẫn Firebase Storage
+- Kiểm tra quyền `owner`, `editor`, `viewer` và tài khoản ngoài phạm vi chia sẻ
+- Kiểm tra tìm kiếm, lọc và các thao tác CRUD trên tài liệu
+
+Migration Supabase nằm tại
+[`supabase/migrations/001_supabase_schema_and_rls.sql`](supabase/migrations/001_supabase_schema_and_rls.sql);
+quy tắc Firebase Storage nằm tại
+[`firebase/storage.rules`](firebase/storage.rules).
 
 ## Đóng góp
 
